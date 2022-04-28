@@ -16,18 +16,19 @@ type PostRequest struct {
 }
 
 type PostResponse struct {
-	Text string
+	Text string `json:"text"`
 }
 
 type Post struct {
-	text string
+	Text string `json:"text"`
 }
 
-var posts = []Post{}
+type postService struct {
+	logger *zap.Logger
+	posts  []Post
+}
 
-func CreatePost(w http.ResponseWriter, r *http.Request) {
-	// vars := mux.Vars(r)
-	// w.WriteHeader(http.StatusOK)
+func (s *postService) CreatePost(w http.ResponseWriter, r *http.Request) {
 	p := PostRequest{}
 	err := json.NewDecoder(r.Body).Decode(&p)
 	if err != nil {
@@ -35,19 +36,18 @@ func CreatePost(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fmt.Printf("Text: {%+v}", p)
+	s.logger.Info(fmt.Sprintf("Text: {%+v}", p))
 
-	newPost := Post{text: p.Text}
+	newPost := Post{Text: p.Text}
 
-	posts = append(posts, newPost)
+	s.posts = append(s.posts, newPost)
 	json.NewEncoder(w).Encode(newPost)
 }
 
-func GetPosts(w http.ResponseWriter, r *http.Request) {
-	// vars := mux.Vars(r)
+func (s *postService) GetPosts(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(posts)
-	// fmt.Fprintf(w, "Category: %v\n", vars["category"])
+	s.logger.Sugar().Infof("posts: %+v", s.posts)
+	json.NewEncoder(w).Encode(s.posts)
 }
 
 const serverPort string = "8000"
@@ -57,11 +57,13 @@ func main() {
 
 	defer logger.Sync()
 
-	logger.Info(fmt.Sprintf("Server starting on port %s..", serverPort))
+	logger.Info(fmt.Sprintf("Server starting on port %s", serverPort))
+
+	postService := postService{logger: logger, posts: []Post{}}
 
 	r := mux.NewRouter()
-	r.HandleFunc("/posts", CreatePost).Methods("POST")
-	r.HandleFunc("/posts", GetPosts).Methods("GET")
+	r.HandleFunc("/posts", postService.CreatePost).Methods("POST")
+	r.HandleFunc("/posts", postService.GetPosts).Methods("GET")
 
 	srv := &http.Server{
 		Handler:      r,
