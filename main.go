@@ -1,56 +1,20 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"time"
 
-	"github.com/gorilla/mux"
+	"github.com/abstructs/newsfeed/adapters"
+	"github.com/abstructs/newsfeed/usecases"
 	"go.uber.org/zap"
 )
 
-type PostRequest struct {
-	Text string `json:"text"`
-}
-
-type PostResponse struct {
-	Text string `json:"text"`
-}
-
-type Post struct {
-	Text string `json:"text"`
-}
-
-type postService struct {
-	logger *zap.Logger
-	posts  []Post
-}
-
-func (s *postService) CreatePost(w http.ResponseWriter, r *http.Request) {
-	p := PostRequest{}
-	err := json.NewDecoder(r.Body).Decode(&p)
-	if err != nil {
-		http.Error(w, err.Error(), http.StatusBadRequest)
-		return
-	}
-
-	s.logger.Info(fmt.Sprintf("Text: {%+v}", p))
-
-	newPost := Post{Text: p.Text}
-
-	s.posts = append(s.posts, newPost)
-	json.NewEncoder(w).Encode(newPost)
-}
-
-func (s *postService) GetPosts(w http.ResponseWriter, r *http.Request) {
-	w.WriteHeader(http.StatusOK)
-	s.logger.Sugar().Infof("posts: %+v", s.posts)
-	json.NewEncoder(w).Encode(s.posts)
-}
-
-const serverPort string = "8000"
+const (
+	serverPort     string = "8000"
+	broker1Address string = "broker:9092"
+)
 
 func main() {
 	logger, _ := zap.NewProduction()
@@ -59,14 +23,13 @@ func main() {
 
 	logger.Info(fmt.Sprintf("Server starting on port %s", serverPort))
 
-	postService := postService{logger: logger, posts: []Post{}}
-
-	r := mux.NewRouter()
-	r.HandleFunc("/posts", postService.CreatePost).Methods("POST")
-	r.HandleFunc("/posts", postService.GetPosts).Methods("GET")
+	writer := adapters.NewWriter(logger, []string{broker1Address})
+	postUsecase := usecases.NewUsecase(logger, writer)
+	postsAPI := adapters.NewPostAPI(logger, postUsecase)
+	router := adapters.NewRouter(postsAPI)
 
 	srv := &http.Server{
-		Handler:      r,
+		Handler:      router,
 		Addr:         fmt.Sprintf(":%s", serverPort),
 		WriteTimeout: 15 * time.Second,
 		ReadTimeout:  15 * time.Second,
